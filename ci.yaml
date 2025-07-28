@@ -1,49 +1,29 @@
 stages:
-  - trigger_jenkins
+  - test
 
-# Установка зависимостей один раз для всех jobs
-before_script:
-  - apt-get update -qq && apt-get install -y -qq jq curl
-
-trigger_jenkins_on_approved_mr:
-  stage: trigger_jenkins
+print_on_approval:
+  stage: test
   rules:
     - if: '$CI_PIPELINE_SOURCE == "merge_request_event" && 
-           $CI_MERGE_REQUEST_TARGET_BRANCH == "main" && 
-           $CI_MERGE_REQUEST_SOURCE_BRANCH == "dev"'
+           $CI_MERGE_REQUEST_TARGET_BRANCH == "main"'
+  before_script:
+    - apt-get update -qq && apt-get install -y -qq jq curl
   script:
     - |
-      # Проверка статуса апрува через API
+      echo "=== Начало проверки MR ==="
+      echo "ID MR: $CI_MERGE_REQUEST_IID"
+      echo "Source branch: $CI_MERGE_REQUEST_SOURCE_BRANCH"
+      echo "Target branch: $CI_MERGE_REQUEST_TARGET_BRANCH"
+
+      # Проверка апрува через API
       API_RESPONSE=$(curl -s --header "PRIVATE-TOKEN: $API_TOKEN" \
         "$CI_API_V4_URL/projects/$CI_PROJECT_ID/merge_requests/$CI_MERGE_REQUEST_IID")
       
       APPROVED=$(echo "$API_RESPONSE" | jq -r '.approved')
-      MERGE_STATUS=$(echo "$API_RESPONSE" | jq -r '.merge_status')
+      echo "Статус апрува: $APPROVED"
 
-      if [ "$APPROVED" = "true" ] && [ "$MERGE_STATUS" = "can_be_merged" ]; then
-        echo "=== MR APPROVED ==="
-        echo "Triggering Jenkins for MR !${CI_MERGE_REQUEST_IID}"
-        
-        curl -X POST \
-          "${JENKINS_URL}/generic-webhook-trigger/invoke?token=MR_APPROVED_TOKEN" \
-          -H "Content-Type: application/json" \
-          -d '{
-            "event": "merge_request_approved",
-            "merge_request": {
-              "id": "'"${CI_MERGE_REQUEST_IID}"'",
-              "source_branch": "dev",
-              "target_branch": "main",
-              "status": "approved",
-              "web_url": "'"${CI_MERGE_REQUEST_PROJECT_URL}"'/-/merge_requests/'"${CI_MERGE_REQUEST_IID}"'"
-            },
-            "project": {
-              "name": "'"${CI_PROJECT_NAME}"'",
-              "url": "'"${CI_PROJECT_URL}"'"
-            }
-          }'
+      if [ "$APPROVED" = "true" ]; then
+        echo "✅ MR получил апрув! Можно запускать Jenkins"
       else
-        echo "=== MR NOT READY ==="
-        echo "Approved: $APPROVED"
-        echo "Merge Status: $MERGE_STATUS"
-        echo "Jenkins trigger skipped."
+        echo "❌ MR еще не апрувнут. Пропускаем триггер Jenkins"
       fi
