@@ -1,29 +1,44 @@
 stages:
-  - check
+  - check_approval
 
-check_approval:
-  stage: check
+check_mr_approval:
+  stage: check_approval
+  image: python:3-alpine  # Образ с curl и python
   rules:
     - if: '$CI_PIPELINE_SOURCE == "merge_request_event" && 
            $CI_MERGE_REQUEST_TARGET_BRANCH_NAME == "main"'
   script:
     - |
-      echo "=== Проверка статуса MR ==="
+      echo "=== Старт проверки MR ==="
+      echo "ID MR: $CI_MERGE_REQUEST_IID"
+      echo "Ветка: $CI_MERGE_REQUEST_SOURCE_BRANCH → $CI_MERGE_REQUEST_TARGET_BRANCH"
+
+      # Устанавливаем jq для надежного парсинга JSON
+      apk add --no-cache jq curl
+
+      # Делаем API-запрос и парсим ответ
+      API_RESPONSE=$(curl -s --header "PRIVATE-TOKEN: $API_TOKEN" \
+        "$CI_API_V4_URL/projects/$CI_PROJECT_ID/merge_requests/$CI_MERGE_REQUEST_IID")
       
-      # Делаем API-запрос и сразу парсим ответ через Python
-      APPROVED=$(curl -s --header "PRIVATE-TOKEN: $API_TOKEN" \
-        "$CI_API_V4_URL/projects/$CI_PROJECT_ID/merge_requests/$CI_MERGE_REQUEST_IID" | \
-        python3 -c "import json, sys; print(json.load(sys.stdin)['approved'])")
+      echo "Ответ API: $API_RESPONSE"
       
+      APPROVED=$(echo "$API_RESPONSE" | jq -r '.approved')
+      MERGE_STATUS=$(echo "$API_RESPONSE" | jq -r '.merge_status')
+
       echo "Статус апрува: $APPROVED"
-      
-      if [ "$APPROVED" = "True" ]; then
-        echo "✅ MR одобрен! Триггерим Jenkins..."
-        # Ваш curl на Jenkins (пример):
-        curl -X POST "${JENKINS_URL}/generic-webhook-trigger/invoke?token=MR_APPROVED_TOKEN" \
-          -H "Content-Type: application/json" \
-          -d '{"mr_id": "'"${CI_MERGE_REQUEST_IID}"'"}'
+      echo "Статус мержа: $MERGE_STATUS"
+
+      if [ "$APPROVED" = "true" ] && [ "$MERGE_STATUS" = "can_be_merged" ]; then
+        echo "✅ MR одобрен и готов к мержу! Триггерим Jenkins..."
+        
+        # # Пример запроса к Jenkins (подставьте свои значения)
+        # curl -X POST "${JENKINS_URL}/generic-webhook-trigger/invoke?token=MR_APPROVED_TOKEN" \
+        #   -H "Content-Type: application/json" \
+        #   -d '{
+        #     "mr_id": "'"${CI_MERGE_REQUEST_IID}"'",
+        #     "status": "approved"
+        #   }'
       else
-        echo "❌ MR не одобрен. Выход."
+        echo "❌ Условия не выполнены: approved=$APPROVED, merge_status=$MERGE_STATUS"
         exit 1
       fi
