@@ -1,36 +1,29 @@
 pipeline {
     agent any
-    
-    triggers {
-        GenericTrigger(
-            genericVariables: [
-                [key: 'GITLAB_HTTP_URL', value: '$.project.http_url'],  // Используем HTTPS вместо SSH
-                [key: 'COMMIT_SHA', value: '$.commit.id'],
-                [key: 'MR_ID', value: '$.merge_request.iid']
-            ],
-            token: 'MR_APPROVED_TOKEN'
-        )
+    parameters {
+        string(name: 'GITLAB_REPO_URL', description: 'URL репозитория GitLab')
+        string(name: 'COMMIT_SHA', description: 'Хеш коммита')
     }
-    
     stages {
         stage('Clone') {
             steps {
                 script {
-                    // Клонируем через HTTPS (не требует SSH-ключей)
+                    echo "🔧 Клонируем репозиторий: ${params.GITLAB_REPO_URL}"
                     sh """
-                        git clone ${env.GITLAB_HTTP_URL} repo
-                        cd repo
-                        git checkout ${env.COMMIT_SHA}
+                        git clone ${params.GITLAB_REPO_URL} src
+                        cd src
+                        git checkout ${params.COMMIT_SHA}
+                        echo "✅ Код успешно склонирован!"
                     """
                 }
             }
         }
-        
-        stage('Process') {
+        stage('Info') {
             steps {
-                dir('repo') {
-                    sh 'git diff HEAD~1 --name-only'  // Пример обработки изменений
-                }
+                echo "🔍 Информация:"
+                echo "Repository: ${params.GITLAB_REPO_URL}"
+                echo "Commit: ${params.COMMIT_SHA}"
+                sh 'cd src && git log -1 --oneline'
             }
         }
     }
