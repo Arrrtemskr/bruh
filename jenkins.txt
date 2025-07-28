@@ -2,14 +2,19 @@ pipeline {
     agent any
     triggers {
         GenericTrigger(
-            genericVariables: [[key: 'repo_url', value: '$.repo_url']],
+            genericVariables: [
+                [key: 'repo_url', value: '$.repo_url'],
+                [key: 'gitlab_token', value: '$.gitlab_token']
+            ],
             token: 'REPO_CLONE_TOKEN'
         )
     }
     stages {
         stage('Clone') {
             steps {
-                sh "git clone ${env.repo_url} && ls -la"
+                sh """
+                    git clone https://gitlab-ci-token:${env.gitlab_token}@${env.repo_url#*://}
+                """
             }
         }
     }
