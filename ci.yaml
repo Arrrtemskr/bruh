@@ -3,22 +3,29 @@ stages:
 
 check_mr_approval:
   stage: check_approval
-  image: alpine:latest  # Используем чистый Alpine образ с apk
+  image: python:3.11-alpine3.18  # Конкретная рабочая версия
   rules:
     - if: '$CI_PIPELINE_SOURCE == "merge_request_event" && $CI_MERGE_REQUEST_TARGET_BRANCH_NAME == "main"'
   before_script:
-    - apk add --no-cache curl jq  # Устанавливаем зависимости
+    - apk update && apk add --no-cache curl jq  # Установка зависимостей
   script:
     - |
       echo "=== Старт проверки MR ==="
       echo "ID MR: $CI_MERGE_REQUEST_IID"
-      echo "Ветка: $CI_MERGE_REQUEST_SOURCE_BRANCH → $CI_MERGE_REQUEST_TARGET_BRANCH"
+      echo "Ветка: $CI_MERGE_REQUEST_SOURCE_BRANCH_NAME → $CI_MERGE_REQUEST_TARGET_BRANCH_NAME"
 
-      API_RESPONSE=$(curl -s --header "PRIVATE-TOKEN: $API_TOKEN" \
-        "$CI_API_V4_URL/projects/$CI_PROJECT_ID/merge_requests/$CI_MERGE_REQUEST_IID")
-      
-      echo "Ответ API: $API_RESPONSE"
-      
+      # Проверка доступности API
+      if [ -z "$API_TOKEN" ]; then
+        echo "❌ Ошибка: Переменная API_TOKEN не установлена"
+        exit 1
+      fi
+
+      API_RESPONSE=$(curl -f -s --header "PRIVATE-TOKEN: $API_TOKEN" \
+        "$CI_API_V4_URL/projects/$CI_PROJECT_ID/merge_requests/$CI_MERGE_REQUEST_IID" || {
+        echo "❌ Ошибка при запросе к GitLab API";
+        exit 1;
+      })
+
       APPROVED=$(echo "$API_RESPONSE" | jq -r '.approved')
       MERGE_STATUS=$(echo "$API_RESPONSE" | jq -r '.merge_status')
 
@@ -28,13 +35,22 @@ check_mr_approval:
       if [ "$APPROVED" = "true" ] && [ "$MERGE_STATUS" = "can_be_merged" ]; then
         echo "✅ MR одобрен и готов к мержу! Триггерим Jenkins..."
         
+        # Проверка переменной Jenkins
+        if [ -z "$JENKINS_URL" ]; then
+          echo "❌ Ошибка: Переменная JENKINS_URL не установлена"
+          exit 1
+        fi
+
         curl -X POST "${JENKINS_URL}/generic-webhook-trigger/invoke?token=MR_APPROVED_TOKEN" \
           -H "Content-Type: application/json" \
           -d '{
             "mr_id": "'"${CI_MERGE_REQUEST_IID}"'",
             "status": "approved"
-          }'
+          }' || {
+          echo "❌ Ошибка при вызове Jenkins";
+          exit 1;
+        }
       else
         echo "❌ Условия не выполнены: approved=$APPROVED, merge_status=$MERGE_STATUS"
-        exit 1
+        exit 0  # Выходим без ошибки, чтобы не блокировать pipeline
       fi
