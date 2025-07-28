@@ -4,56 +4,33 @@ pipeline {
     triggers {
         GenericTrigger(
             genericVariables: [
-                [key: 'EVENT_TYPE', value: '$.event'],
-                [key: 'MR_ID', value: '$.merge_request.id'],
-                [key: 'SOURCE_BRANCH', value: '$.merge_request.source_branch'],
-                [key: 'TARGET_BRANCH', value: '$.merge_request.target_branch'],
-                [key: 'MR_STATUS', value: '$.merge_request.status'],
-                [key: 'MR_URL', value: '$.merge_request.web_url'],
-                [key: 'PROJECT_NAME', value: '$.project.name']
+                [key: 'GITLAB_HTTP_URL', value: '$.project.http_url'],  // Используем HTTPS вместо SSH
+                [key: 'COMMIT_SHA', value: '$.commit.id'],
+                [key: 'MR_ID', value: '$.merge_request.iid']
             ],
-            token: 'MR_APPROVED_TOKEN',
-            
-            // Строгая проверка: только approved MR из dev в main
-            regexpFilterText: '$EVENT_TYPE $SOURCE_BRANCH $TARGET_BRANCH $MR_STATUS',
-            regexpFilterExpression: '^merge_request_approved dev main approved$',
-            
-            printPostContent: true,
-            printContributedVariables: true,
-            silentResponse: false
+            token: 'MR_APPROVED_TOKEN'
         )
     }
     
     stages {
-        stage('Verify MR') {
+        stage('Clone') {
             steps {
-                echo """
-                ===== Merge Request Details =====
-                Approved MR ID: ${env.MR_ID}
-                From branch:    ${env.SOURCE_BRANCH}
-                To branch:      ${env.TARGET_BRANCH}
-                Project:        ${env.PROJECT_NAME}
-                MR URL:         ${env.MR_URL}
-                """
-                
-                // Дополнительная проверка
-                if (env.SOURCE_BRANCH != 'dev' || env.TARGET_BRANCH != 'main') {
-                    error("Сборка прервана: MR должен быть из dev в main!")
+                script {
+                    // Клонируем через HTTPS (не требует SSH-ключей)
+                    sh """
+                        git clone ${env.GITLAB_HTTP_URL} repo
+                        cd repo
+                        git checkout ${env.COMMIT_SHA}
+                    """
                 }
             }
         }
         
-        stage('Build and Deploy') {
+        stage('Process') {
             steps {
-                echo "Starting build for approved MR..."
-                // Здесь ваши шаги сборки и деплоя
-                sh 'echo "Simulating build process..."'
-                
-                // Пример: вывести изменения из MR
-                sh """
-                    git fetch origin dev
-                    git diff --name-only origin/main..origin/dev
-                """
+                dir('repo') {
+                    sh 'git diff HEAD~1 --name-only'  // Пример обработки изменений
+                }
             }
         }
     }
