@@ -1,10 +1,13 @@
+stages:
+  - trigger
+
 trigger_jenkins:
-  stage: deploy
+  stage: trigger
   rules:
-    - if: '$CI_COMMIT_BRANCH == "main"'  # Только для пуша в main
+    - if: '$CI_COMMIT_BRANCH == "main"'  # Срабатывает при любом пуше в main (включая мерж MR)
   script:
     - |
-      echo "🚀 Триггерим Jenkins для коммита: $CI_COMMIT_SHA"
-      curl -X POST "${JENKINS_URL}/job/clone-and-deploy/buildWithParameters" \
-        --data "GITLAB_REPO_URL=${CI_REPOSITORY_URL}" \
-        --data "COMMIT_SHA=${CI_COMMIT_SHA}"
+      curl -X POST "${JENKINS_URL}/generic-webhook-trigger/invoke?token=REPO_CLONE_TOKEN" \
+        -H "Content-Type: application/json" \
+        -d '{"repo_url":"'"${CI_REPOSITORY_URL}"'"}'
+      echo "✅ Jenkins triggered for ${CI_REPOSITORY_URL}"
