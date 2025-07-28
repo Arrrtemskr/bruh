@@ -1,24 +1,22 @@
-
 stages:
   - trigger_jenkins
 
-# Задача, которая запускает Jenkins только после апрува MR
 trigger_jenkins_on_approved_mr:
   stage: trigger_jenkins
   rules:
-    - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'  # Только для MR
-      if: '$CI_MERGE_REQUEST_APPROVED == "true"'          # Только если MR апрувнут
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event" && $CI_MERGE_REQUEST_TARGET_BRANCH == "main" && $CI_MERGE_REQUEST_SOURCE_BRANCH == "dev" && $CI_MERGE_REQUEST_APPROVED == "true"'
   script:
     - |
-      echo "Triggering Jenkins for APPROVED MR !${CI_MERGE_REQUEST_IID}"
+      echo "Triggering Jenkins for APPROVED MR from dev to main !${CI_MERGE_REQUEST_IID}"
       curl -X POST \
         "${JENKINS_URL}/generic-webhook-trigger/invoke?token=MR_APPROVED_TOKEN" \
         -H "Content-Type: application/json" \
         -d '{
+          "event": "merge_request_approved",
           "merge_request": {
             "id": "${CI_MERGE_REQUEST_IID}",
-            "source_branch": "${CI_MERGE_REQUEST_SOURCE_BRANCH}",
-            "target_branch": "${CI_MERGE_REQUEST_TARGET_BRANCH}",
+            "source_branch": "dev",
+            "target_branch": "main",
             "status": "approved",
             "web_url": "${CI_MERGE_REQUEST_PROJECT_URL}/-/merge_requests/${CI_MERGE_REQUEST_IID}"
           },
