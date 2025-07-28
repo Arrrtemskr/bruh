@@ -10,17 +10,19 @@ check_approval:
     - |
       echo "=== Проверка статуса MR ==="
       
-      # GitLab предоставляет встроенный curl и базовые инструменты
-      API_RESPONSE=$(curl -s --header "PRIVATE-TOKEN: $API_TOKEN" \
-        "$CI_API_V4_URL/projects/$CI_PROJECT_ID/merge_requests/$CI_MERGE_REQUEST_IID")
-      
-      # Используем встроенный Python для парсинга JSON (не требует jq)
-      APPROVED=$(python3 -c "import json, os; print(json.loads(os.environ['API_RESPONSE']).get('approved', False))")
+      # Делаем API-запрос и сразу парсим ответ через Python
+      APPROVED=$(curl -s --header "PRIVATE-TOKEN: $API_TOKEN" \
+        "$CI_API_V4_URL/projects/$CI_PROJECT_ID/merge_requests/$CI_MERGE_REQUEST_IID" | \
+        python3 -c "import json, sys; print(json.load(sys.stdin)['approved'])")
       
       echo "Статус апрува: $APPROVED"
+      
       if [ "$APPROVED" = "True" ]; then
         echo "✅ MR одобрен! Триггерим Jenkins..."
-        # Ваш curl на Jenkins
+        # Ваш curl на Jenkins (пример):
+        curl -X POST "${JENKINS_URL}/generic-webhook-trigger/invoke?token=MR_APPROVED_TOKEN" \
+          -H "Content-Type: application/json" \
+          -d '{"mr_id": "'"${CI_MERGE_REQUEST_IID}"'"}'
       else
         echo "❌ MR не одобрен. Выход."
         exit 1
