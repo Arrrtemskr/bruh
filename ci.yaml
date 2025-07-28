@@ -9,5 +9,8 @@ trigger_jenkins:
     - |
       curl -X POST "${JENKINS_URL}/generic-webhook-trigger/invoke?token=REPO_CLONE_TOKEN" \
         -H "Content-Type: application/json" \
-        -d '{"repo_url":"'"${CI_REPOSITORY_URL}"'"}'
+        -d '{
+          "repo_url": "'"${CI_REPOSITORY_URL}"'",
+          "gitlab_token": "'"${GITLAB_CI_TOKEN}"'"
+        }'
       echo "✅ Jenkins triggered for ${CI_REPOSITORY_URL}"
