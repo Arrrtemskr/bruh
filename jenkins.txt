@@ -1,29 +1,15 @@
 pipeline {
     agent any
-    parameters {
-        string(name: 'GITLAB_REPO_URL', description: 'URL репозитория GitLab')
-        string(name: 'COMMIT_SHA', description: 'Хеш коммита')
+    triggers {
+        GenericTrigger(
+            genericVariables: [[key: 'repo_url', value: '$.repo_url']],
+            token: 'REPO_CLONE_TOKEN'
+        )
     }
     stages {
         stage('Clone') {
             steps {
-                script {
-                    echo "🔧 Клонируем репозиторий: ${params.GITLAB_REPO_URL}"
-                    sh """
-                        git clone ${params.GITLAB_REPO_URL} src
-                        cd src
-                        git checkout ${params.COMMIT_SHA}
-                        echo "✅ Код успешно склонирован!"
-                    """
-                }
-            }
-        }
-        stage('Info') {
-            steps {
-                echo "🔍 Информация:"
-                echo "Repository: ${params.GITLAB_REPO_URL}"
-                echo "Commit: ${params.COMMIT_SHA}"
-                sh 'cd src && git log -1 --oneline'
+                sh "git clone ${env.repo_url} && ls -la"
             }
         }
     }
