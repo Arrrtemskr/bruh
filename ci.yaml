@@ -1,40 +1,27 @@
 stages:
-  - build
+  - check
 
-# Установка зависимостей один раз для всех jobs
-before_script:
-  - apt-get update -qq && apt-get install -y -qq jq curl
-
-build:
-  stage: build
+check_approval:
+  stage: check
   rules:
     - if: '$CI_PIPELINE_SOURCE == "merge_request_event" && 
            $CI_MERGE_REQUEST_TARGET_BRANCH_NAME == "main"'
   script:
     - |
-      echo "=== Проверка статуса MR через API ==="
+      echo "=== Проверка статуса MR ==="
+      
+      # GitLab предоставляет встроенный curl и базовые инструменты
       API_RESPONSE=$(curl -s --header "PRIVATE-TOKEN: $API_TOKEN" \
         "$CI_API_V4_URL/projects/$CI_PROJECT_ID/merge_requests/$CI_MERGE_REQUEST_IID")
       
-      APPROVED=$(echo "$API_RESPONSE" | jq -r '.approved')
-      MERGE_STATUS=$(echo "$API_RESPONSE" | jq -r '.merge_status')
-
-      echo "ID MR: $CI_MERGE_REQUEST_IID"
-      echo "Ветка: $CI_MERGE_REQUEST_SOURCE_BRANCH → $CI_MERGE_REQUEST_TARGET_BRANCH"
+      # Используем встроенный Python для парсинга JSON (не требует jq)
+      APPROVED=$(python3 -c "import json, os; print(json.loads(os.environ['API_RESPONSE']).get('approved', False))")
+      
       echo "Статус апрува: $APPROVED"
-      echo "Статус мержа: $MERGE_STATUS"
-
-      if [ "$APPROVED" = "true" ] && [ "$MERGE_STATUS" = "can_be_merged" ]; then
-        echo "✅ MR одобрен и готов к мержу! Запускаем сборку..."
-        
-        # Ваши команды сборки
-        echo "Сборка запущена для MR !${CI_MERGE_REQUEST_IID}"
-        
-        # Пример отправки в Jenkins (раскомментируйте при необходимости)
-        # curl -X POST "${JENKINS_URL}/webhook?token=YOUR_TOKEN" \
-        #   -H "Content-Type: application/json" \
-        #   -d '{"mr_id": "'"${CI_MERGE_REQUEST_IID}"'"}'
+      if [ "$APPROVED" = "True" ]; then
+        echo "✅ MR одобрен! Триггерим Jenkins..."
+        # Ваш curl на Jenkins
       else
-        echo "❌ MR не готов: approved=$APPROVED, merge_status=$MERGE_STATUS"
-        exit 1  # Прерываем пайплайн
+        echo "❌ MR не одобрен. Выход."
+        exit 1
       fi
