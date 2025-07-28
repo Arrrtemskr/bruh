@@ -12,9 +12,15 @@ pipeline {
     stages {
         stage('Clone') {
             steps {
-                sh """
-                    git clone https://gitlab-ci-token:${env.gitlab_token}@${env.repo_url#*://}
-                """
+                script {
+                    // Извлекаем домен и путь из URL (без http:// или https://)
+                    def repo_domain = env.repo_url.replaceFirst(/^https?:\/\//, '')
+                    
+                    // Клонируем с аутентификацией
+                    sh """
+                        git clone https://gitlab-ci-token:${env.gitlab_token}@${repo_domain}
+                    """
+                }
             }
         }
     }
