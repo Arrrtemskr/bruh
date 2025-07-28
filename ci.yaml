@@ -1,11 +1,40 @@
 stages:
-  - build   # Обязательно объявляем stage перед использованием
+  - build
+
+# Установка зависимостей один раз для всех jobs
+before_script:
+  - apt-get update -qq && apt-get install -y -qq jq curl
 
 build:
-  stage: build   # Явно указываем принадлежность к stage
+  stage: build
   rules:
-    - if: '$CI_PIPELINE_SOURCE == "merge_request_event" && $CI_MERGE_REQUEST_TARGET_BRANCH_NAME == "main"'
-      when: always
-    - when: never
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event" && 
+           $CI_MERGE_REQUEST_TARGET_BRANCH_NAME == "main"'
   script:
-    - echo "Сборка для MR в main"
+    - |
+      echo "=== Проверка статуса MR через API ==="
+      API_RESPONSE=$(curl -s --header "PRIVATE-TOKEN: $API_TOKEN" \
+        "$CI_API_V4_URL/projects/$CI_PROJECT_ID/merge_requests/$CI_MERGE_REQUEST_IID")
+      
+      APPROVED=$(echo "$API_RESPONSE" | jq -r '.approved')
+      MERGE_STATUS=$(echo "$API_RESPONSE" | jq -r '.merge_status')
+
+      echo "ID MR: $CI_MERGE_REQUEST_IID"
+      echo "Ветка: $CI_MERGE_REQUEST_SOURCE_BRANCH → $CI_MERGE_REQUEST_TARGET_BRANCH"
+      echo "Статус апрува: $APPROVED"
+      echo "Статус мержа: $MERGE_STATUS"
+
+      if [ "$APPROVED" = "true" ] && [ "$MERGE_STATUS" = "can_be_merged" ]; then
+        echo "✅ MR одобрен и готов к мержу! Запускаем сборку..."
+        
+        # Ваши команды сборки
+        echo "Сборка запущена для MR !${CI_MERGE_REQUEST_IID}"
+        
+        # Пример отправки в Jenkins (раскомментируйте при необходимости)
+        # curl -X POST "${JENKINS_URL}/webhook?token=YOUR_TOKEN" \
+        #   -H "Content-Type: application/json" \
+        #   -d '{"mr_id": "'"${CI_MERGE_REQUEST_IID}"'"}'
+      else
+        echo "❌ MR не готов: approved=$APPROVED, merge_status=$MERGE_STATUS"
+        exit 1  # Прерываем пайплайн
+      fi
