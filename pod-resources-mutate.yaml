@@ -1,7 +1,7 @@
 apiVersion: templates.gatekeeper.sh/v1beta1
 kind: ConstraintTemplate
 metadata:
-  name: pod-resources-mutate
+  name: podresourcelimits
 spec:
   crd:
     spec:
@@ -12,8 +12,11 @@ spec:
       rego: |
         package podresourcelimits
 
+        # Глобальная переменная namespace
+        ns_name = input.review.object.metadata.namespace
+
         # Проверка restricted namespace
-        is_restricted_ns(ns_name) {
+        is_restricted_ns {
           data.inventory.namespace[ns_name].metadata.labels["operations.gatekeeper.policy.dev"] == "restricted"
         }
 
@@ -49,8 +52,7 @@ spec:
           "operations": make_operations(input.review.object.spec.containers[0])
         } if {
           input.review.object.kind == "Pod"
-          input.review.object.metadata.namespace == ns_name
-          is_restricted_ns(ns_name)
+          is_restricted_ns
           count(make_operations(input.review.object.spec.containers[0])) > 0
         }
 
@@ -71,39 +73,31 @@ spec:
           ]
         }
 
-        # Полный набор violation правил
-        violation[{"msg": msg}] {
+        # Правила violation
+        violation[{"msg": "CPU limit must be exactly 50m"}] {
           input.review.object.kind == "Pod"
-          input.review.object.metadata.namespace == ns_name
-          is_restricted_ns(ns_name)
+          is_restricted_ns
           resources := input.review.object.spec.containers[0].resources
           needs_cpu_limit(resources)
-          msg := "CPU limit must be exactly 50m"
         }
 
-        violation[{"msg": msg}] {
+        violation[{"msg": "Memory limit must be exactly 50Mi"}] {
           input.review.object.kind == "Pod"
-          input.review.object.metadata.namespace == ns_name
-          is_restricted_ns(ns_name)
+          is_restricted_ns
           resources := input.review.object.spec.containers[0].resources
           needs_mem_limit(resources)
-          msg := "Memory limit must be exactly 50Mi"
         }
 
-        violation[{"msg": msg}] {
+        violation[{"msg": "CPU request must be exactly 50m"}] {
           input.review.object.kind == "Pod"
-          input.review.object.metadata.namespace == ns_name
-          is_restricted_ns(ns_name)
+          is_restricted_ns
           resources := input.review.object.spec.containers[0].resources
           needs_cpu_request(resources)
-          msg := "CPU request must be exactly 50m"
         }
 
-        violation[{"msg": msg}] {
+        violation[{"msg": "Memory request must be exactly 50Mi"}] {
           input.review.object.kind == "Pod"
-          input.review.object.metadata.namespace == ns_name
-          is_restricted_ns(ns_name)
+          is_restricted_ns
           resources := input.review.object.spec.containers[0].resources
           needs_mem_request(resources)
-          msg := "Memory request must be exactly 50Mi"
         }
