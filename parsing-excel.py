@@ -1,4 +1,22 @@
 import openpyxl
+
+def parse_excel_mappers(file_path):
+    """Парсит Excel с мапперами и возвращает список словарей"""
+    mappers = []
+    wb = openpyxl.load_workbook(file_path)
+    sheet = wb.active
+    
+    for row in sheet.iter_rows(min_row=2, values_only=True):
+        mappers.append({
+            "ad_attribute": row[1],  # Название атрибута в AD
+            "token_attribute": row[3],  # Название атрибута для токена
+            "id_token": str(row[4]).lower() == "true",
+            "access_token": str(row[5]).lower() == "true",
+            "user_info": str(row[6]).lower() == "true"
+        })
+    return mappers
+
+import openpyxl
 from pprint import pprint
 
 def parse_excel_mappers(file_path):
