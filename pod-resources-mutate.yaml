@@ -101,3 +101,193 @@ spec:
           resources := input.review.object.spec.containers[0].resources
           needs_mem_request(resources)
         }
+
+
+
+
+Вывод  kubectl get constrainttemplate podresourcelimits -o yaml:
+apiVersion: templates.gatekeeper.sh/v1
+kind: ConstraintTemplate
+metadata:
+  annotations:
+    kubectl.kubernetes.io/last-applied-configuration: |
+      {"apiVersion":"templates.gatekeeper.sh/v1beta1","kind":"ConstraintTemplate","metadata":{"annotations":{},"name":"podresourcelimits"},"spec":{"crd":{"spec":{"names":{"kind":"PodResourceLimits"}}},"targets":[{"rego":"package podresourcelimits\n\n# Глобальная переменная namespace\nns_name = input.review.object.metadata.namespace\n\n# Проверка restricted namespace\nis_restricted_ns {\n  data.inventory.namespace[ns_name].metadata.labels[\"operations.gatekeeper.policy.dev\"] == \"restricted\"\n}\n\n# Проверка необходимости изменений\nneeds_cpu_limit(resources) {\n  not resources.limits\n} else {\n  resources.limits.cpu != \"50m\"\n}\n\nneeds_mem_limit(resources) {\n  not resources.limits\n} else {\n  resources.limits.memory != \"50Mi\"\n}\n\nneeds_cpu_request(resources) {\n  not resources.requests\n} else {\n  resources.requests.cpu != \"50m\"\n}\n\nneeds_mem_request(resources) {\n  not resources.requests\n} else {\n  resources.requests.memory != \"50Mi\"\n}\n\n# Мутации\nmutation := {\n  \"apiVersion\": \"v1\",\n  \"kind\": \"Pod\",\n  \"operations\": make_operations(input.review.object.spec.containers[0])\n} if {\n  input.review.object.kind == \"Pod\"\n  is_restricted_ns\n  count(make_operations(input.review.object.spec.containers[0])) \u003e 0\n}\n\nmake_operations(container) = ops {\n  resources := object.get(container, \"resources\", {})\n  ops := [\n    {\"operation\": \"add\", \"path\": \"/spec/containers/0/resources/limits/cpu\", \"value\": \"50m\"} |\n    needs_cpu_limit(resources)\n  ] + [\n    {\"operation\": \"add\", \"path\": \"/spec/containers/0/resources/limits/memory\", \"value\": \"50Mi\"} |\n    needs_mem_limit(resources)\n  ] + [\n    {\"operation\": \"add\", \"path\": \"/spec/containers/0/resources/requests/cpu\", \"value\": \"50m\"} |\n    needs_cpu_request(resources)\n  ] + [\n    {\"operation\": \"add\", \"path\": \"/spec/containers/0/resources/requests/memory\", \"value\": \"50Mi\"} |\n    needs_mem_request(resources)\n  ]\n}\n\n# Правила violation\nviolation[{\"msg\": \"CPU limit must be exactly 50m\"}] {\n  input.review.object.kind == \"Pod\"\n  is_restricted_ns\n  resources := input.review.object.spec.containers[0].resources\n  needs_cpu_limit(resources)\n}\n\nviolation[{\"msg\": \"Memory limit must be exactly 50Mi\"}] {\n  input.review.object.kind == \"Pod\"\n  is_restricted_ns\n  resources := input.review.object.spec.containers[0].resources\n  needs_mem_limit(resources)\n}\n\nviolation[{\"msg\": \"CPU request must be exactly 50m\"}] {\n  input.review.object.kind == \"Pod\"\n  is_restricted_ns\n  resources := input.review.object.spec.containers[0].resources\n  needs_cpu_request(resources)\n}\n\nviolation[{\"msg\": \"Memory request must be exactly 50Mi\"}] {\n  input.review.object.kind == \"Pod\"\n  is_restricted_ns\n  resources := input.review.object.spec.containers[0].resources\n  needs_mem_request(resources)\n}\n","target":"admission.k8s.gatekeeper.sh"}]}}
+  creationTimestamp: "2025-08-05T12:30:57Z"
+  generation: 1
+  name: podresourcelimits
+  resourceVersion: "5882396"
+  uid: 5f1bd145-190b-4325-9b03-24e2565073df
+spec:
+  crd:
+    spec:
+      names:
+        kind: PodResourceLimits
+      validation:
+        legacySchema: true
+  targets:
+  - rego: |
+      package podresourcelimits
+
+      # Глобальная переменная namespace
+      ns_name = input.review.object.metadata.namespace
+
+      # Проверка restricted namespace
+      is_restricted_ns {
+        data.inventory.namespace[ns_name].metadata.labels["operations.gatekeeper.policy.dev"] == "restricted"
+      }
+
+      # Проверка необходимости изменений
+      needs_cpu_limit(resources) {
+        not resources.limits
+      } else {
+        resources.limits.cpu != "50m"
+      }
+
+      needs_mem_limit(resources) {
+        not resources.limits
+      } else {
+        resources.limits.memory != "50Mi"
+      }
+
+      needs_cpu_request(resources) {
+        not resources.requests
+      } else {
+        resources.requests.cpu != "50m"
+      }
+
+      needs_mem_request(resources) {
+        not resources.requests
+      } else {
+        resources.requests.memory != "50Mi"
+      }
+
+      # Мутации
+      mutation := {
+        "apiVersion": "v1",
+        "kind": "Pod",
+        "operations": make_operations(input.review.object.spec.containers[0])
+      } if {
+        input.review.object.kind == "Pod"
+        is_restricted_ns
+        count(make_operations(input.review.object.spec.containers[0])) > 0
+      }
+
+      make_operations(container) = ops {
+        resources := object.get(container, "resources", {})
+        ops := [
+          {"operation": "add", "path": "/spec/containers/0/resources/limits/cpu", "value": "50m"} |
+          needs_cpu_limit(resources)
+        ] + [
+          {"operation": "add", "path": "/spec/containers/0/resources/limits/memory", "value": "50Mi"} |
+          needs_mem_limit(resources)
+        ] + [
+          {"operation": "add", "path": "/spec/containers/0/resources/requests/cpu", "value": "50m"} |
+          needs_cpu_request(resources)
+        ] + [
+          {"operation": "add", "path": "/spec/containers/0/resources/requests/memory", "value": "50Mi"} |
+          needs_mem_request(resources)
+        ]
+      }
+
+      # Правила violation
+      violation[{"msg": "CPU limit must be exactly 50m"}] {
+        input.review.object.kind == "Pod"
+        is_restricted_ns
+        resources := input.review.object.spec.containers[0].resources
+        needs_cpu_limit(resources)
+      }
+
+      violation[{"msg": "Memory limit must be exactly 50Mi"}] {
+        input.review.object.kind == "Pod"
+        is_restricted_ns
+        resources := input.review.object.spec.containers[0].resources
+        needs_mem_limit(resources)
+      }
+
+      violation[{"msg": "CPU request must be exactly 50m"}] {
+        input.review.object.kind == "Pod"
+        is_restricted_ns
+        resources := input.review.object.spec.containers[0].resources
+        needs_cpu_request(resources)
+      }
+
+      violation[{"msg": "Memory request must be exactly 50Mi"}] {
+        input.review.object.kind == "Pod"
+        is_restricted_ns
+        resources := input.review.object.spec.containers[0].resources
+        needs_mem_request(resources)
+      }
+    target: admission.k8s.gatekeeper.sh
+status:
+  byPod:
+  - errors:
+    - code: ingest_error
+      message: "Could not ingest Rego: unable to compile modules: 3 errors occurred:\ntemplate:49:
+        rego_type_error: plus: invalid argument(s)\n\thave: (array[object<operation:
+        string, path: string, value: string>], array[object<operation: string, path:
+        string, value: string>], ???)\n\twant: (x: number, y: number, z: number)\ntemplate:49:
+        rego_type_error: plus: invalid argument(s)\n\thave: (number, array[object<operation:
+        string, path: string, value: string>], ???)\n\twant: (x: number, y: number,
+        z: number)\ntemplate:49: rego_type_error: plus: invalid argument(s)\n\thave:
+        (number, array[object<operation: string, path: string, value: string>], ???)\n\twant:
+        (x: number, y: number, z: number)"
+    id: gatekeeper-audit-5674fbbd7f-trs7n
+    observedGeneration: 1
+    operations:
+    - audit
+    - generate
+    - mutation-status
+    - status
+    templateUID: 5f1bd145-190b-4325-9b03-24e2565073df
+  - errors:
+    - code: ingest_error
+      message: "Could not ingest Rego: unable to compile modules: 3 errors occurred:\ntemplate:49:
+        rego_type_error: plus: invalid argument(s)\n\thave: (array[object<operation:
+        string, path: string, value: string>], array[object<operation: string, path:
+        string, value: string>], ???)\n\twant: (x: number, y: number, z: number)\ntemplate:49:
+        rego_type_error: plus: invalid argument(s)\n\thave: (number, array[object<operation:
+        string, path: string, value: string>], ???)\n\twant: (x: number, y: number,
+        z: number)\ntemplate:49: rego_type_error: plus: invalid argument(s)\n\thave:
+        (number, array[object<operation: string, path: string, value: string>], ???)\n\twant:
+        (x: number, y: number, z: number)"
+    id: gatekeeper-controller-manager-867c77cd88-cvpdl
+    observedGeneration: 1
+    operations:
+    - mutation-webhook
+    - webhook
+    templateUID: 5f1bd145-190b-4325-9b03-24e2565073df
+  - errors:
+    - code: ingest_error
+      message: "Could not ingest Rego: unable to compile modules: 3 errors occurred:\ntemplate:49:
+        rego_type_error: plus: invalid argument(s)\n\thave: (array[object<operation:
+        string, path: string, value: string>], array[object<operation: string, path:
+        string, value: string>], ???)\n\twant: (x: number, y: number, z: number)\ntemplate:49:
+        rego_type_error: plus: invalid argument(s)\n\thave: (number, array[object<operation:
+        string, path: string, value: string>], ???)\n\twant: (x: number, y: number,
+        z: number)\ntemplate:49: rego_type_error: plus: invalid argument(s)\n\thave:
+        (number, array[object<operation: string, path: string, value: string>], ???)\n\twant:
+        (x: number, y: number, z: number)"
+    id: gatekeeper-controller-manager-867c77cd88-ztpw8
+    observedGeneration: 1
+    operations:
+    - mutation-webhook
+    - webhook
+    templateUID: 5f1bd145-190b-4325-9b03-24e2565073df
+  - errors:
+    - code: ingest_error
+      message: "Could not ingest Rego: unable to compile modules: 3 errors occurred:\ntemplate:49:
+        rego_type_error: plus: invalid argument(s)\n\thave: (array[object<operation:
+        string, path: string, value: string>], array[object<operation: string, path:
+        string, value: string>], ???)\n\twant: (x: number, y: number, z: number)\ntemplate:49:
+        rego_type_error: plus: invalid argument(s)\n\thave: (number, array[object<operation:
+        string, path: string, value: string>], ???)\n\twant: (x: number, y: number,
+        z: number)\ntemplate:49: rego_type_error: plus: invalid argument(s)\n\thave:
+        (number, array[object<operation: string, path: string, value: string>], ???)\n\twant:
+        (x: number, y: number, z: number)"
+    id: gatekeeper-controller-manager-867c77cd88-zxhgm
+    observedGeneration: 1
+    operations:
+    - mutation-webhook
+    - webhook
+    templateUID: 5f1bd145-190b-4325-9b03-24e2565073df
+  created: false
