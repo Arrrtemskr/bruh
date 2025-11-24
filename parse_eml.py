@@ -1,12 +1,13 @@
 # parse_eml.py
 import os
-from email import message_from_bytes
+from email import message_from_bytes, message_from_string
 from email.policy import default
 from bs4 import BeautifulSoup
 import eml_parser
+from typing import Optional, Dict
 
 
-def _extract_realm_from_html(html: str) -> dict | None:
+def _extract_realm_from_html(html: str) -> Optional[Dict]:
     """Ищет таблицу с заголовком 'Название realm' и возвращает первую строку как dict."""
     if not html:
         return None
@@ -37,11 +38,34 @@ def _extract_realm_from_html(html: str) -> dict | None:
     return None
 
 
-def extract_realm_config_from_eml(eml_path: str) -> dict:
+def _parse_multipart_fragment(fragment: str) -> Optional[str]:
+    """
+    Пытается распарсить строку вида:
+        Content-Type: text/html; ...
+        Content-Transfer-Encoding: base64
+        ...
+        <base64 data>
+    и вернуть декодированное тело.
+    """
+    try:
+        # Добавляем обязательный заголовок MIME-Version
+        fake_msg_str = "MIME-Version: 1.0\n" + fragment
+        msg = message_from_string(fake_msg_str, policy=default)
+        payload = msg.get_payload(decode=True)
+        if payload is None:
+            return None
+        if isinstance(payload, bytes):
+            return payload.decode("utf-8", errors="replace")
+        return str(payload)
+    except Exception:
+        return None
+
+
+def extract_realm_config_from_eml(eml_path: str) -> Dict:
     """
     Читает .eml файл, ищет вложения типа message/rfc822,
-    извлекает HTML из каждого, ищет таблицу с 'Название realm'.
-    Возвращает словарь с параметрами.
+    извлекает HTML (даже если он вложен как MIME-фрагмент с base64),
+    ищет таблицу с 'Название realm', возвращает конфигурацию.
     """
     if not os.path.isfile(eml_path):
         raise FileNotFoundError(f"Файл не найден: {eml_path}")
@@ -49,7 +73,6 @@ def extract_realm_config_from_eml(eml_path: str) -> dict:
     with open(eml_path, "rb") as f:
         raw = f.read()
 
-    # ВАЖНО: include_attachment_data=True — чтобы получить тело вложений
     parser = eml_parser.EmlParser(include_attachment_data=True)
     parsed = parser.decode_email_bytes(raw)
 
@@ -61,23 +84,35 @@ def extract_realm_config_from_eml(eml_path: str) -> dict:
         ct = att.get("content_header", {}).get("content-type", [""])[0]
         if "message/rfc822" in ct:
             try:
-                raw_inner = att["raw"]  # bytes вложенного письма
+                raw_inner = att["raw"]
                 inner_msg = message_from_bytes(raw_inner, policy=default)
 
-                # Ищем HTML-тело во вложенном письме
-                html_content = None
+                # Обходим все части вложенного письма
                 for part in inner_msg.walk():
-                    if part.get_content_type() == "text/html":
-                        html_content = part.get_content()
-                        break
+                    if not part.get_content_type().startswith("text/"):
+                        continue
 
-                if not html_content:
-                    continue
+                    payload = part.get_content()
+                    if not isinstance(payload, str):
+                        continue
 
-                config = _extract_realm_from_html(html_content)
-                if config:
-                    print(f"✅ Найдена конфигурация realm в вложении (hash: {att['hash']['sha256'][:12]})")
-                    return config
+                    html_content = None
+
+                    # Сценарий 1: payload — это уже чистый HTML
+                    if "<html" in payload.lower() or "<table" in payload.lower():
+                        html_content = payload
+
+                    # Сценарий 2: payload содержит MIME-заголовки (Content-Type, base64 и т.д.)
+                    elif "Content-Type:" in payload and "Content-Transfer-Encoding:" in payload:
+                        decoded = _parse_multipart_fragment(payload)
+                        if decoded and ("<html" in decoded.lower() or "<table" in decoded.lower()):
+                            html_content = decoded
+
+                    if html_content:
+                        config = _extract_realm_from_html(html_content)
+                        if config is not None:
+                            print(f"✅ Найдена конфигурация realm в вложении (hash: {att['hash']['sha256'][:12]})")
+                            return config
 
             except Exception as e:
                 print(f"⚠️ Ошибка при обработке вложения: {e}")
